@@ -391,10 +391,37 @@ class M8StateEngine:
             logger.warning("Vault sweep failed for %s: %s", instance_id, exc)
 
     def _persist_budget(self, state: Dict[str, Any]) -> None:
+        """Write-Through: DuckDB strategy_budgets + Redis m8:state-Hash (Konsistenz für SCAN)."""
         try:
             self._store().sync_budget(state)
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Budget write-through failed: %s", exc)
+        if not self.redis:
+            return
+        import asyncio
+
+        payload = {
+            k: state[k] for k in (
+                "strategy_id", "status", "base_budget_usd", "current_budget_usd",
+                "budget_multiplier", "consecutive_losses", "consecutive_low_pf_days",
+                "shadow_trades_count", "shadow_wins",
+            ) if k in state
+        }
+        if state.get("last_ga_recalibration_ts"):
+            payload["last_ga_recalibration_ts"] = _ga_ts_to_iso(state["last_ga_recalibration_ts"])
+        if state.get("last_eod_date"):
+            payload["last_eod_date"] = state["last_eod_date"]
+        iid = state.get("strategy_id") or state.get("instance_id")
+        coro = self.redis.hset(KEY_STATE.format(iid), mapping={k: str(v) for k, v in payload.items()})
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            try:
+                asyncio.run(coro)
+            except Exception as exc:  # pragma: no cover
+                logger.warning("redis write-back failed: %s", exc)
+            return
+        loop.create_task(coro)
 
     async def _publish_wake(self, instance_id: str, reason: str) -> None:
         bus = get_event_bus()

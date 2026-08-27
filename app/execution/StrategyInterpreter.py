@@ -150,7 +150,8 @@ def generate_signal(strategy: Dict[str, Any], candles: List[Dict[str, Any]],
 def _proposal(strategy: Dict[str, Any], direction: str, entry: float,
               stop: float, tp: float, reason: str, archetype: str) -> Dict[str, Any]:
     return {
-        "instance_id": f"{strategy['id']}__{strategy.get('assetPair')}__{strategy.get('interval', 15)}m__{strategy.get('executionMode', 'paper').upper()}",
+        # Instanz-ID = Strategie-ID (M8-Registry-Schlüssel, Blueprint §2)
+        "instance_id": strategy["id"],
         "strategy_id": strategy["id"],
         "symbol": strategy.get("assetPair"),
         "timeframe": f"{strategy.get('interval', 15)}m",
