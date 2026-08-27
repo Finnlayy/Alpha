@@ -1,0 +1,36 @@
+# =========================================================
+# Projekt:Alpha — Windows-Stack (Blueprint v1.2.0)
+# Host: Windows 192.168.178.60 (optional)
+#   TS-Server (Docker) · Genetic Optimizer · Academy (WFO/DSR)
+#   React-Dashboard (Vite-Build, :3000) · NFS-Mount Z:\data
+#
+# NFS-Voraussetzung (auf Ubuntu-Core 192.168.178.50):
+#   /srv/alpha/data  192.168.178.60(rw,sync,no_subtree_check,no_root_squash)
+#   → Windows: New-NfsMapping (siehe setup_windows.ps1) → Z:\data
+# =========================================================
+services:
+  alpha-portal:
+    build:
+      context: ../..
+      dockerfile: stacks/windows/Dockerfile
+    image: alpha-windows-portal:1.2.0
+    container_name: alpha-windows-portal
+    restart: unless-stopped
+    ports:
+      - "3000:3000"           # React-Dashboard + TS-API (Blueprint: Vite / :3000)
+    environment:
+      # Ubuntu-Core (M8 Execution API) über LAN
+      ALPHA_CORE_URL: ${ALPHA_CORE_URL:-http://192.168.178.50:8000}
+      PORT: "3000"
+      ALPHA_DATA_DIR: /data
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      # Z:\data = NFS-Mount vom Ubuntu-Core (shared DuckDB/Parquet-Vault)
+      - type: bind
+        source: Z:\\data          # Windows-Pfad des NFS-Mounts
+        target: /data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

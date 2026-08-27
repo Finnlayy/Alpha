@@ -72,11 +72,19 @@ class TestM8StateEnginePipeline:
 
 class TestAutopsyZoneClassification:
 
-    def test_bad_zone_priority_over_stop_loss(self):
-        """MFE >= 0.5R muss zwingend als 'BAD' klassifiziert werden."""
+    def test_frozen_v120_stop_loss_precedence_over_bad(self):
+        """Frozen v1.2.0 (Blueprint): STOP_LOSS wird VOR BAD geprüft -> CLEAN_LOSS."""
         from app.execution.AutopsyProcessor import classify_autopsy_zone
-        
+
         zone = classify_autopsy_zone(pnl_r=-1.0, mfe_r=0.85, exit_reason="STOP_LOSS", capture_ratio=0.0)
+        assert zone == "CLEAN_LOSS"
+
+    def test_v164_delta_bad_precedence_opt_in(self):
+        """Skeleton-Delta v1.6.4 (opt-in): BAD hat Präzedenz über STOP_LOSS."""
+        from app.execution.AutopsyProcessor import classify_autopsy_zone
+
+        zone = classify_autopsy_zone(pnl_r=-1.0, mfe_r=0.85, exit_reason="STOP_LOSS",
+                                     capture_ratio=0.0, order="v1.6.4")
         assert zone == "BAD"
 
     def test_stop_slippage_calculation_uses_fill_vs_trigger(self):

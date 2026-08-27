@@ -1,0 +1,63 @@
+# =========================================================
+# Projekt:Alpha — Ubuntu Core-Stack (Blueprint v1.2.0)
+# Host: Ubuntu 24.04 · 192.168.178.50 (Always-on)
+#
+#   Ingestion: OmniStream / Glint / CCXT WS
+#   M8 Judge (Noir) · Shadow Execution (Jaune / CCXT Pro)
+#   Redis :6379 AOF · DuckDB / Parquet
+#   Stack: ccxt · httpx · fastapi · uvicorn · pydantic · pyarrow
+#
+# NFS-Export für Windows-Host (Z:\data):
+#   /srv/alpha/data  192.168.178.60(rw,sync,no_subtree_check,no_root_squash)
+# =========================================================
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: alpha-redis
+    restart: unless-stopped
+    # Blueprint §1: Redis :6379 AOF (dauerhafter M8-State)
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec",
+              "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-aof:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  alpha-core:
+    build:
+      context: ../..
+      dockerfile: stacks/ubuntu/Dockerfile
+    image: alpha-core:1.2.0
+    container_name: alpha-core
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      ALPHA_REDIS_URL: redis://redis:6379/0
+      ALPHA_MARKET_SOURCE: ${ALPHA_MARKET_SOURCE:-synthetic}   # synthetic | ccxt_ws
+      ALPHA_BASE_BUDGET_USD: ${ALPHA_BASE_BUDGET_USD:-50}
+      ALPHA_VAULT_SWEEP: "true"
+      ALPHA_AUTOPSY_ORDER: v1.2.0
+      ALPHA_LOG_LEVEL: ${ALPHA_LOG_LEVEL:-INFO}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      # DuckDB + Parquet-Lake (NFS-Export-Ziel für Windows Z:\data)
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/dashboard/init',timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  redis-aof:
