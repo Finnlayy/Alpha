@@ -759,8 +759,8 @@ export default function MetricsPanel({
                     ${Object.keys(balances).reduce((acc, asset) => {
                       const amount = balances[asset] || 0;
                       if (asset === 'USD') return acc + amount;
-                      const ticker = tickers.find(t => t.symbol === `${asset}USD` || t.symbol === `${asset}/USD`);
-                      return acc + (ticker ? amount * ticker.lastPrice : 0);
+                      const ticker = tickers.find(t => t.pair === `${asset}USD` || t.pair === `${asset}/USD`);
+                      return acc + (ticker ? amount * ticker.price : 0);
                     }, 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
@@ -770,8 +770,8 @@ export default function MetricsPanel({
                     const val = balances[asset] || 0;
                     const isFiat = asset === 'USD' || asset === 'EUR' || asset === 'GBP' || asset === 'CAD';
                     const symbol = asset === 'USD' ? '$' : asset === 'EUR' ? '€' : asset === 'GBP' ? '£' : asset === 'CAD' ? 'C$' : '';
-                    const ticker = !isFiat ? tickers.find(t => t.symbol === `${asset}USD` || t.symbol === `${asset}/USD`) : undefined;
-                    const usdValue = ticker ? val * ticker.lastPrice : undefined;
+                    const ticker = !isFiat ? tickers.find(t => t.pair === `${asset}USD` || t.pair === `${asset}/USD`) : undefined;
+                    const usdValue = ticker ? val * ticker.price : undefined;
 
                     return (
                       <div key={asset} className="flex justify-between items-center text-xs border-b border-zinc-800/45 pb-1.5 last:border-0 last:pb-0">

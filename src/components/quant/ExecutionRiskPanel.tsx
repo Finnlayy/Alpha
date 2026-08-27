@@ -1,12 +1,50 @@
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
-import { 
-  ShieldAlert, ShieldCheck, Scale, Cpu, Zap, Activity, RefreshCw, 
-  CheckCircle2, XCircle, AlertTriangle, ArrowRight, BarChart3, Calculator
+import {
+  ShieldAlert, ShieldCheck, Scale, Cpu, Zap, Activity, RefreshCw,
+  CheckCircle2, XCircle, AlertTriangle, ArrowRight, BarChart3, Calculator,
+  PiggyBank, Layers
 } from "lucide-react";
 import { safeFetchJson } from "../../lib/api";
+import { StrategyCard, M8InstanceState } from "../StrategyCard";
+import { MfeMaeScatter, AutopsyEvent } from "../MfeMaeScatter";
 
 export function ExecutionRiskPanel() {
+  // M8 State Engine (Blueprint v1.2.0 §2) — Live-Instanzen + Vault + Autopsie-Scatter
+  const [m8States, setM8States] = useState<Record<string, M8InstanceState>>({});
+  const [vault, setVault] = useState<any>(null);
+  const [autopsies, setAutopsies] = useState<AutopsyEvent[]>([]);
+  const [zoneDist, setZoneDist] = useState<any>(null);
+  const [m8Refreshing, setM8Refreshing] = useState(false);
+
+  const fetchM8 = async () => {
+    setM8Refreshing(true);
+    try {
+      const [states, v, auto] = await Promise.all([
+        safeFetchJson<{ states: Record<string, M8InstanceState> }>("/api/m8/states", undefined, 4000),
+        safeFetchJson<any>("/api/m8/vault", undefined, 4000),
+        safeFetchJson<{ events: AutopsyEvent[]; zoneDistribution: any }>("/api/m8/autopsies?limit=120", undefined, 4000),
+      ]);
+      if (states?.states) setM8States(states.states);
+      if (v) setVault(v);
+      if (auto) {
+        setAutopsies(auto.events || []);
+        setZoneDist(auto.zoneDistribution);
+      }
+    } finally {
+      setM8Refreshing(false);
+    }
+  };
+
+  const m8Action = async (id: string, action: "promote" | "quarantine") => {
+    await fetch(`/api/m8/${encodeURIComponent(id)}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "manual-dashboard" }),
+    });
+    fetchM8();
+  };
+
   // M8 Judge & Kelly state (Modul 09)
   const [judgeSymbol, setJudgeSymbol] = useState<string>("BTC/USD");
   const [orderQty, setOrderQty] = useState<number>(0.5);
@@ -36,6 +74,9 @@ export function ExecutionRiskPanel() {
     runImpactSimulation();
     runReconciliation();
     runRLInference();
+    fetchM8();
+    const m8Timer = setInterval(fetchM8, 10000);
+    return () => clearInterval(m8Timer);
   }, []);
 
   const runJudgeEvaluation = async () => {
@@ -130,6 +171,91 @@ export function ExecutionRiskPanel() {
 
   return (
     <div className="space-y-6" id="quant-execution-risk-panel">
+      {/* M8 State Engine Section (Blueprint v1.2.0 §2) — Instanzen, Vault, Autopsien */}
+      <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <Layers className="w-5 h-5 text-cyan-400" />
+            <div>
+              <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider">
+                M8 State Engine — ACTIVE → THROTTLED → QUARANTINED → RETIRED
+              </h3>
+              <p className="text-xs text-zinc-400 text-slate-400">
+                Vault Profit Sweep (100% v1.2.0) · TradeAutopsy 5-Zonen · Redis-Fast-Path
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={fetchM8}
+              disabled={m8Refreshing}
+              className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold tracking-wider transition-colors flex items-center gap-1.5"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${m8Refreshing ? "animate-spin" : ""}`} />
+              REFRESH
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          {/* Strategy Cards (M8-Instanzen) */}
+          <div className="lg:col-span-7">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {Object.entries(m8States).map(([id, st]) => (
+                <StrategyCard
+                  key={id}
+                  state={st}
+                  name={st.strategy_id.split("__")[0]}
+                  symbol={st.strategy_id.split("__")[1]}
+                  onPromote={(sid) => m8Action(sid, "promote")}
+                  onQuarantine={(sid) => m8Action(sid, "quarantine")}
+                />
+              ))}
+              {Object.keys(m8States).length === 0 && (
+                <div className="col-span-full p-6 text-center text-xs font-mono text-slate-500 border border-dashed border-slate-800 rounded-xl">
+                  Lade M8-Instanzen…
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Vault + Autopsy-Scatter */}
+          <div className="lg:col-span-5 space-y-4">
+            <div className="bg-slate-950/60 rounded-xl border border-slate-800 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <PiggyBank className="w-4 h-4 text-emerald-400" />
+                  USD-Vault (100% Profit Sweep)
+                </span>
+                <span className="text-lg font-mono font-bold text-emerald-400">
+                  ${(vault?.balance_usd ?? 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="text-[10px] font-mono text-slate-500 mb-2">
+                {vault?.entries_count ?? 0} Sweeps · letzter: {vault?.last_sweep
+                  ? `${vault.last_sweep.amount_usd?.toFixed(2)} USD von ${vault.last_sweep.strategy_id?.split("__")[0]}`
+                  : "—"}
+              </div>
+              {(zoneDist) && (
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(zoneDist).map(([z, n]: [string, any]) => (
+                    <span key={z} className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[10px] font-mono text-slate-300">
+                      {z}: <span className="font-bold">{n}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="bg-slate-950/60 rounded-xl border border-slate-800 p-3">
+              <div className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-1 px-1">
+                MFE / MAE Autopsy-Scatter (R-Multiple)
+              </div>
+              <MfeMaeScatter events={autopsies} />
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Top Section: M8 Judge 8 Reject-Gates & Fractional Kelly Sizer */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-5 pb-4 border-b border-slate-800">
